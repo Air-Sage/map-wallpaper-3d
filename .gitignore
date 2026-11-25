@@ -1,0 +1,4 @@
+tools/node_modules
+preview/
+.claude/
+.DS_Store

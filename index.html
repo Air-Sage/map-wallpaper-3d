@@ -1,0 +1,911 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>地图壁纸 3D 展厅</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="robots" content="noindex, nofollow">
+<style>
+/* layout: one wide viewing bay with the turntable, a console strip under it, then the index wall of 100 numbered plates */
+:root{
+  --space:#0a1020;   /* page ground: deep hull navy */
+  --bay:#060a14;     /* surround of the viewing bay */
+  --panel:#121b2f;   /* console panels */
+  --panel-hi:#1a2540;
+  --line:#27344f;    /* hairlines */
+  --hull:#efe6d2;    /* cream hull plating: primary text */
+  --dim:#93a0b8;     /* secondary text */
+  --glow:#45d6e8;    /* cyan lamp: accent */
+  --amber:#f6a93b;   /* amber marker: current item */
+  --font-ui:"PingFang SC","HarmonyOS Sans SC","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-head:"ZCOOL QingKe HuangYou","PingFang SC","HarmonyOS Sans SC","Microsoft YaHei",sans-serif;
+  --font-num:"Oxanium","DIN Alternate","Avenir Next Condensed","PingFang SC",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{background:var(--space)}
+body{
+  margin:0;background:var(--space);color:var(--hull);
+  font-family:var(--font-ui);font-size:14px;line-height:1.6;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:18px 44px;
+}
+button,input{font:inherit;color:inherit}
+.app{max-width:1320px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+
+.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 20px}
+.top h1{margin:0;font-family:var(--font-head);font-weight:400;font-size:26px;letter-spacing:.04em;line-height:1.2;text-wrap:balance}
+.top h1 b{font-family:var(--font-num);font-weight:700;color:var(--glow);letter-spacing:.02em}
+.top p{margin:0;color:var(--dim);max-width:66ch;min-width:0}
+
+/* viewing bay */
+.stage{
+  position:relative;width:100%;aspect-ratio:12/7;max-height:78vh;min-height:200px;
+  background:var(--bay);border:1px solid var(--line);border-radius:14px;overflow:hidden;
+}
+.stage:fullscreen{max-height:none;border:0;border-radius:0;aspect-ratio:auto}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:none}
+#gl.dragging{cursor:grabbing}
+.flat{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.hud{position:absolute;pointer-events:none;text-shadow:0 1px 6px rgba(4,8,18,.9)}
+.hud-id{left:16px;top:10px;display:flex;align-items:baseline;gap:8px;font-family:var(--font-num)}
+.hud-id .num{font-size:40px;font-weight:700;line-height:1;letter-spacing:.02em;color:var(--hull)}
+.hud-id .of{font-size:14px;color:var(--dim);font-weight:500}
+.hud-stat{right:16px;top:14px;text-align:right;font-family:var(--font-num);font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums;letter-spacing:.03em}
+.legend{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:6px;font-family:var(--font-ui)}
+.legend i{display:block;width:96px;height:6px;border-radius:3px;background:linear-gradient(90deg,#0d1433,#1a8ca8 40%,#f0e6cc 75%,#f79e2e)}
+.hud-hint{left:16px;bottom:12px;font-size:12px;color:var(--dim)}
+.busy{right:16px;bottom:12px;font-size:12px;color:var(--glow);font-family:var(--font-num);letter-spacing:.04em}
+.nav{
+  position:absolute;top:50%;transform:translateY(-50%);width:40px;height:64px;padding:0;
+  border:1px solid var(--line);background:rgba(10,16,32,.62);color:var(--hull);
+  border-radius:10px;font-size:24px;line-height:1;cursor:pointer;
+}
+.nav:hover{border-color:var(--glow);color:var(--glow)}
+.nav.prev{left:10px}.nav.next{right:10px}
+
+/* console strip */
+.console{
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;
+}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:0;padding:0;min-width:0}
+.seg legend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.seg span{display:block;padding:5px 15px;color:var(--dim);border-right:1px solid var(--line);white-space:nowrap}
+.seg label:last-child span{border-right:0}
+.seg input:checked + span{background:var(--glow);color:#04121a;font-weight:600}
+.seg input:focus-visible + span{outline:2px solid var(--amber);outline-offset:-2px}
+.knob{display:flex;align-items:center;gap:10px;color:var(--dim);min-width:0}
+.knob input[type=range]{width:130px;max-width:38vw;accent-color:var(--glow)}
+.knob output{font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--hull);min-width:2.8em}
+.tick{display:flex;align-items:center;gap:7px;color:var(--dim);cursor:pointer;white-space:nowrap}
+.tick input{width:16px;height:16px;accent-color:var(--glow);margin:0}
+.snaps{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--dim)}
+.spacer{flex:1 1 0}
+.btn{border:1px solid var(--line);background:var(--panel-hi);border-radius:9px;padding:5px 14px;cursor:pointer;white-space:nowrap}
+.btn.sm{padding:3px 10px;font-size:13px}
+.btn:hover{border-color:var(--glow);color:var(--glow)}
+:is(.btn,.nav,.tile):focus-visible,.tick input:focus-visible,.knob input:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+
+/* index wall */
+.index-head{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin:8px 0 0}
+.index-head h2{margin:0;font-family:var(--font-head);font-weight:400;font-size:19px;letter-spacing:.04em}
+.index-head span{color:var(--dim);font-size:13px}
+.index-head .ring{display:inline-block;width:9px;height:9px;border-radius:50%;border:2px solid var(--glow);vertical-align:-1px;margin-right:5px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:10px}
+.tile{
+  position:relative;display:block;width:100%;aspect-ratio:320/187;padding:0;cursor:pointer;
+  border:1px solid var(--line);border-radius:8px;overflow:hidden;
+  background-color:var(--panel);background-image:url(thumbs.webp);background-size:1000% 1000%;
+}
+.tile .n{
+  position:absolute;left:0;top:0;padding:1px 7px 0;border-bottom-right-radius:7px;
+  background:rgba(6,10,20,.78);font-family:var(--font-num);font-size:12px;font-weight:500;letter-spacing:.05em;color:var(--hull);
+}
+.tile .r{position:absolute;right:6px;top:6px;width:11px;height:11px;border-radius:50%;border:2px solid var(--glow);background:rgba(6,10,20,.6)}
+.tile:hover{border-color:var(--glow)}
+.tile[aria-current="true"]{border-color:var(--amber);box-shadow:0 0 0 2px var(--amber)}
+.tile[aria-current="true"] .n{background:var(--amber);color:#1c1204;font-weight:700}
+
+.note{margin:6px 0 0;color:var(--dim);max-width:80ch;font-size:13px}
+.note b{color:var(--hull);font-weight:600}
+@media (max-width:640px){
+  .top h1{font-size:22px}
+  .hud-id .num{font-size:28px}
+  .hud-stat{font-size:11px}
+  .hud-hint{display:none}
+  .nav{width:32px;height:48px;font-size:20px}
+  .spacer{display:none}
+  .seg span{padding:5px 11px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="top">
+    <h1>地图壁纸 <b>3D</b> 展厅</h1>
+    <p>文件夹里的 100 张 2.5D 场景图。每张先补画出侧面和背面的视角，再逐个视角估算深度、重建成带贴图的 3D 网格，拼成一座能绕着看一整圈的沙盘。</p>
+  </header>
+
+  <section class="stage" id="stage" aria-label="3D 观察窗">
+    <canvas id="gl" tabindex="0" aria-label="当前地图的 3D 沙盘，拖动可环绕"></canvas>
+    <div class="hud hud-id"><span class="num" id="hudNum">001</span><span class="of">/ 100</span></div>
+    <div class="hud hud-stat">
+      <div id="hudStat">—</div>
+      <div class="legend" id="legend" hidden>低<i></i>高</div>
+    </div>
+    <div class="hud hud-hint">拖动环绕 · Ctrl + 滚轮或双指缩放 · 双击复位 · ← → 换图</div>
+    <div class="hud busy" id="busy" hidden>载入中</div>
+    <button class="nav prev" id="prev" type="button" aria-label="上一张">‹</button>
+    <button class="nav next" id="next" type="button" aria-label="下一张">›</button>
+  </section>
+
+  <section class="console" aria-label="显示设置">
+    <fieldset class="seg" id="modes">
+      <legend>显示模式</legend>
+      <label><input type="radio" name="mode" id="mode-tex" value="0" checked><span>贴图</span></label>
+      <label><input type="radio" name="mode" id="mode-clay" value="1"><span>素模</span></label>
+      <label><input type="radio" name="mode" id="mode-wire" value="2"><span>线框</span></label>
+      <label><input type="radio" name="mode" id="mode-height" value="3"><span>高度</span></label>
+    </fieldset>
+    <label class="knob" for="depthK">立体强度
+      <input type="range" id="depthK" min="40" max="170" step="1" value="100">
+      <output id="depthKOut" for="depthK">100%</output>
+    </label>
+    <label class="tick" for="auto"><input type="checkbox" id="auto" checked>自动旋转</label>
+    <label class="tick" for="lit"><input type="checkbox" id="lit">打光</label>
+    <div class="snaps" id="snaps" aria-label="转到视角"></div>
+    <span class="spacer"></span>
+    <button class="btn" id="reset" type="button">复位视角</button>
+    <!--LOCAL-BEGIN--><button class="btn" id="glb" type="button" title="把当前地图的全部视角导出成一个 .glb 模型文件">导出 GLB</button><!--LOCAL-END-->
+    <button class="btn" id="fs" type="button">全屏</button>
+  </section>
+
+  <div class="index-head"><h2>全部地图</h2><span id="indexInfo"></span></div>
+  <div class="grid" id="grid"></div>
+
+  <p class="note"><b>怎么建的模：</b>原图只有一个固定的 2.5D 视角。先请 Codex 按“相机绕场景中心转到右侧、背面、左侧”各重画一张（侧面用竖幅，这样横向的场景从侧面看才是又窄又深），保持地标、布局和画风一致。再用 Depth Anything V2 Small 给每个视角估出远近，把一张网格沿视线推开成浮雕，在深度断开的地方切开并补出被挡住的背景；然后找出每个视角里地面所在的平面，以地面为准把四个视角摆到同一块底板上。转动时显示相机离你最近的那个视角，两个视角之间做过渡。侧面和背面是重新推理出来的，细节不会和原作完全对得上，转到两个视角正中间时也能看出接缝。</p>
+</div>
+
+<script>
+(() => {
+'use strict';
+const N = 100, FOVY = 32 * Math.PI / 180, CAM = 1 / Math.tan(FOVY / 2), RAD = Math.PI / 180;
+// maps that have generated side views: degrees of camera orbit (0 = the original picture) ->
+// [scale, turn in degrees, shift x, shift z, tangent of the camera's height angle above the ground, relief gain].
+// The first four line the view up with the original picture on the turntable; the gain evens out how tall things stand.
+const VIEWS = /*VIEWS-BEGIN*/{"001":{"0":[1,0,0,0,1,0.754],"90":[1.1394,0,0.009,0.1405,1,1.35],"180":[1.0326,0,-0.0385,0.22,1,1.112],"270":[1.3063,0,-0.0679,0.0544,1,1]},"002":{"0":[1,0,0,0,3.7321,0.3],"90":[1.5616,0,0,-0.08,3.7321,1.129],"180":[1,0,0,0,3.7321,1.35],"270":[1.5616,0,0,-0.08,3.7321,1]},"003":{"0":[1,0,0,0,1.8898,0.343],"90":[1.3576,0,-0.22,-0.1331,1.8898,1.35],"180":[1.0608,0,-0.22,-0.22,1.8898,0.698],"270":[1.4417,0,-0.22,-0.1639,1.8898,1]},"004":{"0":[1,0,0,0,1.111,1.35],"90":[1.5064,0,0.22,-0.22,1.111,1],"180":[1.15,0,-0.22,-0.22,1.111,0.853],"270":[1.5529,0,-0.22,-0.22,1.111,1.344]},"005":{"0":[1,0,0,0,2.3406,0.486],"90":[1.5854,0,0.22,-0.0255,2.3406,1.02],"180":[0.9255,0,-0.0923,-0.1003,2.3406,1.35],"270":[1.3228,0,-0.22,0.0751,2.3406,1]},"006":{"0":[1,0,0,0,1.1103,1.35],"90":[1.841,0,-0.0482,-0.22,1.1103,1.35],"180":[1.15,0,0.1589,-0.22,1.1103,1.35],"270":[1.4539,0,-0.22,-0.22,1.1103,1]},"007":{"0":[1,0,0,0,1,1.35],"90":[1.187,0,0.22,-0.071,1,1],"180":[0.78,0,0.0253,-0.22,1,1.35],"270":[1.0367,0,-0.22,0.108,1,1.35]},"008":{"0":[1,0,0,0,1,1.35],"90":[1.1928,0,0.22,-0.1619,1,1.147],"180":[0.8106,0,0.0993,-0.22,1,1.345],"270":[1.2786,0,-0.22,-0.1958,1,1]},"009":{"0":[1,0,0,0,1.2886,1.35],"90":[1.3094,0,0.22,-0.0398,1.2886,1.35],"180":[1.0726,0,0.0084,-0.1669,1.2886,1.35],"270":[1.4943,0,0.1834,-0.0963,1.2886,1]},"010":{"0":[1,0,0,0,1,1.35],"90":[1.2109,0,0.1314,0.0124,1,1.35],"180":[0.9351,0,-0.0063,-0.0792,1,1.303],"270":[1.227,0,-0.22,-0.0488,1,1]},"011":{"0":[1,0,0,0,1,1.35],"90":[1.1661,0,0.22,0.0596,1,1.35],"180":[0.8865,0,0.0225,0.1694,1,1.35],"270":[1.3972,0,-0.1906,0.0994,1,1]},"012":{"0":[1,0,0,0,1,0.755],"90":[1.4115,0,0.1875,0.1809,1,1.35],"180":[0.9824,0,-0.0193,0.22,1,0.948],"270":[1.4676,0,-0.22,0.147,1,1]},"013":{"0":[1,0,0,0,1.2619,0.645],"90":[1.3225,0,0.22,0.22,1.2619,1.035],"180":[0.78,0,-0.0449,-0.0049,1.2619,1.35],"270":[1.0019,0,-0.22,0.153,1.2619,1]},"014":{"0":[1,0,0,0,1,0.903],"90":[1.3931,0,0.056,-0.1765,1,1],"180":[1.043,0,-0.0592,0.1329,1,0.624],"270":[1.6262,0,0.2051,-0.005,1,1.35]},"015":{"0":[1,0,0,0,1,1.219],"90":[1.1601,0,-0.1512,-0.0345,1,1.35],"180":[0.8164,0,-0.22,-0.0629,1,1.35],"270":[1.1026,0,-0.0218,-0.028,1,1]},"016":{"0":[1,0,0,0,1,1.35],"90":[1.2993,0,0.22,-0.0376,1,1.272],"180":[0.8478,0,0.1299,-0.22,1,1.35],"270":[1.2472,0,-0.22,-0.0441,1,1]},"017":{"0":[1,0,0,0,1,0.924],"90":[1.0786,0,0.1833,0.22,1,1],"180":[0.78,0,0.0121,0.22,1,1.21],"270":[1.0587,0,0.1735,0.22,1,1.254]},"018":{"0":[1,0,0,0,1.1258,1.35],"90":[1.4346,0,0.0961,0.1195,1.1258,1],"180":[1.001,0,0.081,0.0079,1.1258,1.169],"270":[1.479,0,0.0749,0.22,1.1258,1.35]},"019":{"0":[1,0,0,0,1.1918,0.548],"90":[0.7979,0,-0.22,0.22,1.1918,1.35],"180":[0.78,0,-0.22,0.22,1.1918,1.35],"270":[0.9248,0,-0.22,0.22,1.1918,1]},"020":{"0":[1,0,0,0,1,1.016],"90":[1.0351,0,-0.1586,-0.0563,1,1.338],"180":[0.8466,0,-0.22,-0.22,1,1.125],"270":[1.4867,0,-0.22,-0.1597,1,1]},"021":{"0":[1,0,0,0,2.1351,0.3],"90":[1.521,0,0.0478,-0.0153,2.1351,1.35],"180":[1.15,0,-0.22,0.1422,2.1351,0.445],"270":[1.4712,0,-0.22,-0.0151,2.1351,1]},"022":{"0":[1,0,0,0,1.7043,1.086],"90":[1.4705,0,0.1015,0.0716,1.7043,1],"180":[0.9743,0,-0.011,-0.0155,1.7043,1.35],"270":[1.4534,0,-0.1171,0.1628,1.7043,1.35]},"023":{"0":[1,0,0,0,1.201,0.981],"90":[1.663,0,0.22,-0.22,1.201,1],"180":[1.0198,0,0.1404,-0.22,1.201,1.35],"270":[1.5024,0,-0.0891,-0.22,1.201,1.326]},"024":{"0":[1,0,0,0,1,1.35],"90":[1.4791,0,-0.1125,0.1858,1,1],"180":[0.8309,0,-0.0683,-0.0818,1,1.35],"270":[1.3436,0,-0.1011,0.1788,1,1.106]},"025":{"0":[1,0,0,0,1,1.35],"90":[1.4604,0,0.22,0.109,1,1],"180":[0.9776,0,0.0197,0.22,1,1.35],"270":[1.3467,0,-0.22,0.22,1,1.35]},"026":{"0":[1,0,0,0,1,1.217],"90":[1.1573,0,0.0215,0.22,1,1],"180":[0.8723,0,-0.0278,0.22,1,1.35],"270":[1.4006,0,-0.0539,0.2179,1,1.157]},"027":{"0":[1,0,0,0,1.3379,0.422],"90":[1.7157,0,0.1085,-0.1877,1.3379,1],"180":[1.0748,0,0.0701,-0.22,1.3379,1.35],"270":[1.5743,0,0.0863,-0.22,1.3379,1.128]},"028":{"0":[1,0,0,0,1,1.28],"90":[1.212,0,0.22,-0.22,1,1.088],"180":[1.0099,0,-0.0551,-0.1714,1,1.35],"270":[1.616,0,-0.2038,-0.056,1,1]},"029":{"0":[1,0,0,0,1,1.35],"90":[1.3222,0,0.22,-0.0002,1,1],"180":[1.15,0,-0.0305,0.22,1,0.9],"270":[1.1442,0,-0.22,0.0041,1,1.35]},"030":{"0":[1,0,0,0,1.0086,1.35],"90":[1.5204,0,0.0467,-0.1924,1.0086,1],"180":[0.915,0,0.2198,-0.22,1.0086,1.35],"270":[1.4447,0,-0.22,-0.1514,1.0086,1.35]},"031":{"0":[1,0,0,0,1,1.35],"90":[1.5401,0,0.22,-0.22,1,1],"180":[1.0325,0,0.1046,-0.22,1,1.35],"270":[1.2138,0,-0.22,-0.22,1,1.35]},"032":{"0":[1,0,0,0,1,1.128],"90":[1.2207,0,0.083,0.1424,1,1],"180":[0.9508,0,-0.0465,0.0608,1,1.35],"270":[1.3068,0,-0.22,0.0989,1,1.35]},"033":{"0":[1,0,0,0,1,0.96],"90":[1.1523,0,0.0153,0.0861,1,1.35],"180":[0.78,0,-0.0532,0.1793,1,0.3],"270":[1.367,0,-0.22,0.0886,1,1]},"034":{"0":[1,0,0,0,1.6548,1.35],"90":[1.827,0,-0.0665,-0.22,1.6548,1.226],"180":[1,0,0,0,1.6548,0.3],"270":[1.6092,0,-0.22,-0.22,1.6548,1]},"035":{"0":[1,0,0,0,1,1.071],"90":[1.1567,0,0.22,-0.0946,1,1],"180":[0.9918,0,0.0366,-0.22,1,0.54],"270":[1.4107,0,-0.22,-0.0734,1,1.35]},"036":{"0":[1,0,0,0,1.1506,1.35],"90":[2.0821,0,0.22,-0.22,1.1506,1.35],"180":[1.15,0,-0.0536,-0.22,1.1506,1.35],"270":[1.6943,0,-0.22,-0.22,1.1506,1]},"037":{"0":[1,0,0,0,1.1792,1.35],"90":[1.2027,0,0.22,-0.22,1.1792,1],"180":[0.8843,0,0.22,-0.22,1.1792,1.35],"270":[1.1819,0,-0.22,-0.22,1.1792,1.35]},"038":{"0":[1,0,0,0,1,0.843],"90":[0.9336,0,0.22,0.22,1,1.024],"180":[1.0575,0,-0.0424,0.22,1,0.618],"270":[1.1286,0,-0.0907,0.22,1,1]},"039":{"0":[1,0,0,0,1,1.35],"90":[1.8333,0,-0.1712,-0.0646,1,1.214],"180":[0.8707,0,-0.1215,-0.0091,1,1.35],"270":[1.5412,0,-0.22,-0.2043,1,1]},"040":{"0":[1,0,0,0,1.944,1.35],"90":[1.2054,0,0.22,0.22,1.944,1.35],"180":[0.78,0,-0.0723,0.22,1.944,1.35],"270":[1.114,0,-0.22,0.2135,1.944,1]},"041":{"0":[1,0,0,0,1,1.097],"90":[1.2645,0,-0.1215,0.2124,1,1.35],"180":[0.7877,0,0.1988,-0.0115,1,1.35],"270":[1.3754,0,0.0072,0.0478,1,1]},"042":{"0":[1,0,0,0,2.3063,1.193],"90":[1.4025,0,-0.0881,0.22,2.3063,1.284],"180":[0.8081,0,-0.1235,0.0221,2.3063,0.624],"270":[1.3571,0,0.0539,0.22,2.3063,1]},"043":{"0":[1,0,0,0,3.4544,0.408],"90":[2.1819,0,-0.22,-0.0494,3.4544,1.35],"180":[1.15,0,0.22,0.0057,3.4544,0.946],"270":[2.1342,0,0.22,0.0651,3.4544,1]},"044":{"0":[1,0,0,0,1.5624,0.51],"90":[1.4843,0,0.22,-0.1761,1.5624,1.35],"180":[0.8719,0,-0.0573,-0.22,1.5624,1.35],"270":[1.4664,0,-0.22,-0.1562,1.5624,1]},"045":{"0":[1,0,0,0,2.1898,1.35],"90":[1.5665,0,0.1523,-0.22,2.1898,1],"180":[1.1055,0,0.003,-0.0109,2.1898,1.35],"270":[1.7327,0,0.0663,-0.0144,2.1898,1.35]},"046":{"0":[1,0,0,0,1.0575,0.921],"90":[1.4321,0,0.22,0.1714,1.0575,1],"180":[0.8208,0,0.0006,-0.0876,1.0575,1.259],"270":[0.7167,0,0.0217,0.1545,1.0575,1.35]},"047":{"0":[1,0,0,0,1,1.35],"90":[1.4049,0,0.0221,0.2037,1,1],"180":[0.78,0,0.0112,0.1449,1,1.35],"270":[1.2143,0,-0.079,0.22,1,1.35]},"048":{"0":[1,0,0,0,1.008,1.296],"90":[1.3846,0,-0.22,0.22,1.008,1],"180":[0.78,0,-0.0391,0.0954,1.008,1.35],"270":[1.199,0,-0.1265,0.22,1.008,1.35]},"049":{"0":[1,0,0,0,1.1982,1.35],"90":[1.9078,0,0.22,-0.22,1.1982,1],"180":[0.9591,0,-0.0626,-0.22,1.1982,1.35],"270":[1.9784,0,0.22,-0.22,1.1982,1.35]},"050":{"0":[1,0,0,0,2.2813,0.3],"45":[1.6433,0,-0.2764,-0.0347,2.2813,1.148],"90":[1.7681,0,0.0755,-0.1395,2.2813,0.956],"135":[1.5925,0,-0.207,-0.1041,2.2813,1.023],"180":[1.0244,0,-0.132,-0.22,2.2813,0.879],"225":[1.6179,0,-0.2858,-0.0254,2.2813,1.089],"270":[1.655,0,-0.22,-0.1017,2.2813,1],"315":[1.7262,0,-0.1839,-0.1272,2.2813,0.686]},"051":{"0":[1,0,0,0,1.1393,1.223],"90":[1.5787,0,0.0065,0.0865,1.1393,1.071],"180":[1.1252,0,-0.1722,0.1053,1.1393,1.331],"270":[1.3786,0,-0.22,0.22,1.1393,1]},"052":{"0":[1,0,0,0,3.7321,0.524],"90":[1.2786,0,-0.1093,0.22,3.7321,1],"180":[0.78,0,-0.22,0.22,3.7321,1.35],"270":[1.1408,0,-0.22,0.22,3.7321,1.35]},"053":{"0":[1,0,0,0,3.7321,0.797],"90":[1.6072,0,0.0604,-0.0382,3.7321,1],"180":[1.15,0,0.0162,-0.0879,3.7321,1.35],"270":[1.932,0,-0.2072,0.1732,3.7321,1.35]},"054":{"0":[1,0,0,0,1,0.833],"90":[0.9409,0,0.22,0.22,1,1],"180":[0.78,0,0.1997,0.22,1,1.185],"270":[1.0036,0,0.1357,0.22,1,1.034]},"055":{"0":[1,0,0,0,1.1598,1.33],"90":[1.793,0,0.0067,-0.22,1.1598,1.35],"180":[1.15,0,0.22,-0.22,1.1598,1.228],"270":[2.1271,0,0.22,-0.22,1.1598,1]},"056":{"0":[1,0,0,0,1,1.35],"90":[1.3302,0,0.0886,0.0635,1,1],"180":[0.9593,0,-0.0048,0.22,1,0.671],"270":[1.1432,0,-0.207,0.1311,1,1.35]},"057":{"0":[1,0,0,0,1.0081,1.033],"90":[1.2882,0,0.22,-0.129,1.0081,1],"180":[0.8956,0,0.0773,-0.22,1.0081,1.35],"270":[1.5617,0,-0.22,-0.1733,1.0081,1.35]},"058":{"0":[1,0,0,0,3.7321,0.328],"90":[0.8991,0,-0.1296,0.0079,3.7321,1.35],"180":[0.78,0,-0.1934,0.22,3.7321,0.3],"270":[0.9465,0,-0.0647,0.0405,3.7321,1]},"059":{"0":[1,0,0,0,1.1352,1.35],"90":[1.6542,0,-0.22,0.1514,1.1352,1],"180":[1.0089,0,0.2144,0.1991,1.1352,1.35],"270":[1.4291,0,-0.056,0.22,1.1352,1.06]},"060":{"0":[1,0,0,0,1.102,0.564],"90":[1.0735,0,-0.0726,0.0078,1.102,1.35],"180":[0.8073,0,-0.1386,-0.2086,1.102,0.799],"270":[1.2772,0,-0.22,0.0226,1.102,1]},"061":{"0":[1,0,0,0,1,0.433],"90":[0.8626,0,0.22,0.22,1,1],"180":[0.78,0,0.1339,0.22,1,0.6],"270":[0.7687,0,-0.1791,0.22,1,1.35]},"062":{"0":[1,0,0,0,1.3491,1.35],"90":[1.4624,0,0.22,-0.22,1.3491,1.35],"180":[1.0243,0,0.2006,-0.22,1.3491,1.35],"270":[1.4078,0,-0.2107,-0.22,1.3491,1]},"063":{"0":[1,0,0,0,1,1.188],"90":[0.9778,0,0.22,0.22,1,1.35],"180":[1.0482,0,0.0642,0.22,1,1.265],"270":[1.3221,0,-0.2133,0.1934,1,1]},"064":{"0":[1,0,0,0,1.3516,1.35],"90":[1.5088,0,0.22,-0.0594,1.3516,1],"180":[0.8196,0,0.22,-0.22,1.3516,1.35],"270":[1.3036,0,0.22,0.0656,1.3516,1.35]},"065":{"0":[1,0,0,0,1,1.009],"90":[1.6586,0,0.22,-0.1717,1,0.969],"180":[1.15,0,-0.1295,0.22,1,1.35],"270":[1.4678,0,0.22,0.1318,1,1]},"066":{"0":[1,0,0,0,1,1.35],"90":[1.322,0,0.22,-0.1297,1,1.305],"180":[0.8788,0,-0.22,0.22,1,1.35],"270":[1.483,0,-0.0026,-0.1073,1,1]},"067":{"0":[1,0,0,0,1.3081,0.645],"90":[0.8465,0,0.22,0.22,1.3081,1],"180":[0.78,0,0.22,0.22,1.3081,1.35],"270":[0.9233,0,0.22,0.22,1.3081,1.35]},"068":{"0":[1,0,0,0,1.1647,1.009],"90":[1.4934,0,0.1023,-0.0066,1.1647,1.35],"180":[1,0,0,0,1.1647,0.344],"270":[1.3403,0,-0.1419,-0.0531,1.1647,1]},"069":{"0":[1,0,0,0,1.0527,0.901],"90":[1.226,0,-0.0377,0.22,1.0527,1],"180":[0.78,0,-0.0217,0.22,1.0527,1.35],"270":[1.1471,0,-0.1153,0.22,1.0527,1.109]},"070":{"0":[1,0,0,0,1,1.35],"90":[1.8754,0,-0.22,-0.22,1,1],"180":[1.0375,0,-0.22,-0.22,1,1.052],"270":[1.4016,0,-0.22,-0.22,1,1.35]},"071":{"0":[1,0,0,0,1,1.197],"90":[1.1069,0,0.0703,-0.22,1,1.35],"180":[0.9537,0,-0.1938,-0.22,1,1.35],"270":[1.2526,0,-0.22,-0.22,1,1]},"072":{"0":[1,0,0,0,2.3349,0.464],"90":[2.0699,0,-0.1723,-0.0699,2.3349,1.011],"180":[1.1094,0,-0.1806,-0.2029,2.3349,0.823],"270":[1.6227,0,-0.22,-0.1311,2.3349,1]},"073":{"0":[1,0,0,0,1.4602,0.819],"90":[1.2745,0,0.0984,0.22,1.4602,1.35],"180":[0.8911,0,0.0996,0.1691,1.4602,1.35],"270":[1.0774,0,-0.0989,0.22,1.4602,1]},"074":{"0":[1,0,0,0,1,1.35],"90":[1.7541,0,-0.22,0.1098,1,1],"180":[1,0,0,0,1,0.719],"270":[1.6086,0,0.0077,0.0324,1,1.35]},"075":{"0":[1,0,0,0,1,1.307],"90":[1.2546,0,0.2187,0.048,1,1],"180":[1.0944,0,0.0408,-0.0334,1,0.3]}}/*VIEWS-END*/;
+const VIEW_NAME = { 0: '正面', 45: '右前', 90: '右侧', 135: '右后', 180: '背面', 225: '左后', 270: '左侧', 315: '左前' };
+const pad = n => String(n).padStart(3, '0');
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const degsOf = id => VIEWS[id] ? Object.keys(VIEWS[id]).map(Number).sort((p, q) => p - q) : [0];
+
+// display type: loaded without blocking the first paint
+{ const l = document.createElement('link'); l.rel = 'stylesheet';
+  l.href = 'https://fonts.googleapis.com/css2?family=Oxanium:wght@500;700&family=ZCOOL+QingKe+HuangYou&display=swap';
+  document.head.appendChild(l); }
+
+const stage = $('stage'), canvas = $('gl'), grid = $('grid');
+const st = {
+  cur: 0, map: null, mode: 0, strength: 1, lit: 0, auto: !reduceMotion,
+  yaw: 0, pitch: 0, zoom: 1, tYaw: 0, tPitch: 0, tZoom: 1, autoMix: 0, idleAt: 0,
+  dirty: true, t0: performance.now(),
+};
+$('auto').checked = st.auto;
+
+// ---------- index wall ----------
+let full = 0;
+for (let i = 0; i < N; i++) {
+  const id = pad(i + 1), b = document.createElement('button'), round = degsOf(id).length > 1;
+  if (round) full++;
+  b.type = 'button'; b.className = 'tile'; b.dataset.i = i;
+  b.style.backgroundPosition = `${(i % 10) * 100 / 9}% ${Math.floor(i / 10) * 100 / 9}%`;
+  b.setAttribute('aria-label', '地图 ' + id + (round ? '，可环绕一圈' : '，只有正面视角'));
+  b.innerHTML = `<span class="n">${id}</span>` + (round ? '<span class="r"></span>' : '');
+  grid.appendChild(b);
+}
+$('indexInfo').innerHTML = full >= N ? '001 – 100，全部可以环绕一圈' :
+  `<span class="ring"></span>带圆环的 ${full} 张已补全侧面和背面，可以环绕一圈；其余 ${N - full} 张目前只有正面视角`;
+grid.addEventListener('click', e => {
+  const t = e.target.closest('.tile'); if (!t) return;
+  select(+t.dataset.i, true);
+  const r = stage.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) stage.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+});
+
+// ---------- WebGL ----------
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: false, powerPreference: 'high-performance' });
+const VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aUV;
+layout(location=1) in float aD;
+layout(location=2) in vec4 aNb;   // disparity of the left, right, upper and lower neighbour
+uniform mat4 uVP, uModel;
+uniform float uK, uD0, uAspect, uCam, uGain;
+uniform vec3 uPlane;
+uniform vec2 uStep;
+out vec2 vUV; out float vFacing; out vec3 vN, vW;
+// Slide a picture-plane point along the ray from this view's camera; disparity d sets how far.
+vec3 P(vec2 uv, float d){
+  vec2 p = vec2((uv.x*2.0-1.0)*uAspect, 1.0-uv.y*2.0);
+  float g = dot(uPlane, vec3(p,1.0));                       // disparity of the ground under this pixel
+  d = g + uGain*(d-g);                                      // how far things stand out from the ground
+  float s = 1.0/max(0.22, 1.0+uK*(d-uD0));
+  return vec3(p*s, uCam*(1.0-s));
+}
+void main(){
+  vec3 p = P(aUV, aD);
+  vec3 l = P(aUV-vec2(uStep.x,0.0), aNb.x), r = P(aUV+vec2(uStep.x,0.0), aNb.y);
+  vec3 u = P(aUV-vec2(0.0,uStep.y), aNb.z), d = P(aUV+vec2(0.0,uStep.y), aNb.w);
+  vec3 n = normalize(cross(r-l, u-d));
+  vFacing = abs(dot(n, normalize(vec3(0.0,0.0,uCam)-p)));   // near 0 on faces this view never saw
+  vN = mat3(uModel)*n;
+  vW = (uModel*vec4(p,1.0)).xyz;                            // turntable space: ground is y = 0
+  vUV = aUV;
+  gl_Position = uVP*vec4(vW,1.0);
+}`;
+const FS = `#version 300 es
+precision highp float;
+in vec2 vUV; in float vFacing; in vec3 vN, vW;
+uniform sampler2D uTex, uBg;
+uniform int uMode, uLayer;
+uniform float uLit, uAlpha;
+uniform vec2 uClip;
+uniform vec3 uLight, uEye, uBgCol;
+uniform vec2 uGrid;
+out vec4 o;
+vec3 ramp(float t){
+  vec3 a=vec3(0.05,0.08,0.20), b=vec3(0.10,0.55,0.66), c=vec3(0.94,0.90,0.80), d=vec3(0.97,0.62,0.18);
+  return t<0.4 ? mix(a,b,t/0.4) : t<0.75 ? mix(b,c,(t-0.4)/0.35) : mix(c,d,(t-0.75)/0.25);
+}
+void main(){
+  vec2 q = vW.xz/uClip; q *= q;
+  float rr = sqrt(sqrt(dot(q,q)));                           // 1 on the rim of the rounded slab the map stands on
+  if(rr > 1.0) discard;
+  vec3 n = normalize(vN);
+  float lam = max(dot(n,uLight),0.0);
+  float hgt = clamp(0.36+vW.y*0.9, 0.0, 1.0);
+  vec3 col;
+  if(uMode==0){
+    col = texture(uTex,vUV).rgb;
+    if(uLayer==1){ vec4 b = texture(uBg,vUV); col = mix(col, b.rgb, b.a); }
+    col *= mix(1.0, 0.58+0.62*lam, uLit);
+    col *= mix(0.8, 1.0, smoothstep(0.02,0.2,vFacing));
+  } else if(uMode==1){
+    vec3 v = normalize(uEye-vW), h = normalize(v+uLight);
+    col = vec3(0.80,0.77,0.71)*(0.20+0.16*(0.5+0.5*n.y)+0.80*lam) + 0.10*pow(max(dot(n,h),0.0),24.0);
+    col *= mix(0.62, 1.0, smoothstep(0.0,0.22,vFacing));
+  } else if(uMode==2){
+    vec2 g = vUV*uGrid, f = abs(fract(g-0.5)-0.5)/fwidth(g);
+    float line = 1.0-clamp(min(f.x,f.y)-0.15,0.0,1.0);
+    col = mix(vec3(0.030,0.045,0.085), ramp(hgt)*1.12, line);
+  } else {
+    col = ramp(hgt)*(0.78+0.27*lam);
+  }
+  col *= 1.0-0.55*smoothstep(0.975, 1.0, rr);                // the rim falls into shade
+  o = vec4(col, uAlpha);
+}`;
+
+// the plinth under the map: a floor and a low wall around the rounded slab
+const VS_BASE = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aP;
+uniform mat4 uVP;
+uniform vec2 uClip;
+out float vY; out vec3 vN, vW;
+void main(){
+  vY = aP.y; vN = normalize(vec3(aP.x/uClip.x, 0.0, aP.z/uClip.y));
+  vW = vec3(aP.x*uClip.x, aP.y, aP.z*uClip.y);
+  gl_Position = uVP*vec4(vW, 1.0);
+}`;
+const FS_BASE = `#version 300 es
+precision highp float;
+in float vY; in vec3 vN, vW;
+uniform vec3 uLight;
+uniform sampler2D uTex;
+uniform mat3 uToCam;      // turntable space -> the original view's camera space
+uniform float uCam, uAspect;
+out vec4 o;
+void main(){
+  float lit = 0.6+0.4*max(dot(vN,uLight),0.0);
+  vec3 wall = mix(vec3(0.040,0.062,0.115), vec3(0.085,0.125,0.215), smoothstep(-0.16,-0.02,vY))*lit;
+  vec3 col = mix(wall, vec3(0.20,0.62,0.70), smoothstep(-0.014,-0.004,vY)*0.75);   // a lit lip along the top
+  if(vN.x == 0.0 && vN.z == 0.0){
+    // the floor: the original picture laid flat on the ground, dimmed, for wherever a view has nothing to show
+    vec3 p = uToCam*vec3(vW.x, 0.0, vW.z);
+    vec2 q = p.xy*uCam/(uCam-p.z);
+    col = texture(uTex, vec2(q.x/uAspect*0.5+0.5, 0.5-q.y*0.5)).rgb*0.62;
+  }
+  o = vec4(col,1.0);
+}`;
+
+/*SHARED-BEGIN (also read by tools/glb.mjs) */
+const TAU = 0.03;      // a disparity step larger than this between neighbours counts as a depth jump
+// Unproject one grid sample: slide the picture-plane point along the ray from the view's camera.
+// plane and gain squeeze the depth towards the fitted ground first (gain 1 leaves it alone).
+function unproject(u, v, d, k, d0, aspect, cam, plane, gain) {
+  const x = (u * 2 - 1) * aspect, y = 1 - v * 2;
+  if (plane) { const g = plane.a * x + plane.b * y + plane.c; d = g + gain * (d - g); }
+  const s = 1 / Math.max(0.22, 1 + k * (d - d0));
+  return [x * s, y * s, cam * (1 - s)];
+}
+// Back layer: wherever the front surface jumps in depth, continue the far side underneath the near
+// side (depth and colour), so a turned view shows painted-in background instead of stretched faces.
+// With the ground plane known, what hides behind a thing is at least the ground it stands on.
+function buildLayers(d, col, w, h, plane, aspect) {
+  const R = 96, n = w * h, dist = new Uint16Array(n), lvl = new Float32Array(n), order = new Int32Array(n);
+  let qt = 0;
+  for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
+    let far = Infinity;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy; if ((dx || dy) && xx >= 0 && yy >= 0 && xx < w && yy < h) { const v = d[yy * w + xx]; if (d[i] - v > TAU && v < far) far = v; }
+    }
+    if (far < Infinity) { dist[i] = 1; lvl[i] = far; order[qt++] = i; }
+  }
+  for (let qh = 0; qh < qt; qh++) {           // grow from the jump into the occluder
+    const p = order[qh], dp = dist[p]; if (dp >= R) continue;
+    const x = p % w, y = (p - x) / w, lim = lvl[p] + TAU * 0.5;
+    if (x > 0 && !dist[p - 1] && d[p - 1] > lim) { dist[p - 1] = dp + 1; lvl[p - 1] = lvl[p]; order[qt++] = p - 1; }
+    if (x < w - 1 && !dist[p + 1] && d[p + 1] > lim) { dist[p + 1] = dp + 1; lvl[p + 1] = lvl[p]; order[qt++] = p + 1; }
+    if (y > 0 && !dist[p - w] && d[p - w] > lim) { dist[p - w] = dp + 1; lvl[p - w] = lvl[p]; order[qt++] = p - w; }
+    if (y < h - 1 && !dist[p + w] && d[p + w] > lim) { dist[p + w] = dp + 1; lvl[p + w] = lvl[p]; order[qt++] = p + w; }
+  }
+  const bgD = Float32Array.from(d), c = new Float32Array(n * 3), bg = new Uint8ClampedArray(n * 4), mask = new Uint8Array(n);
+  for (let i = 0; i < n; i++) { c[i * 3] = col[i * 4]; c[i * 3 + 1] = col[i * 4 + 1]; c[i * 3 + 2] = col[i * 4 + 2]; }
+  for (let k = 0; k < qt; k++) {              // in growth order, each sample averages what is already known around it
+    const i = order[k], di = dist[i], x = i % w, y = (i - x) / w;
+    let sw = 0, r = 0, g = 0, b = 0, z = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const xx = x + dx, yy = y + dy; if (!(dx || dy) || xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+      const j = yy * w + xx, dj = dist[j];
+      if (dj < di && (dj > 0 || d[j] < d[i] - TAU)) { const wt = dx && dy ? 0.7 : 1; sw += wt; r += c[j * 3] * wt; g += c[j * 3 + 1] * wt; b += c[j * 3 + 2] * wt; z += bgD[j] * wt; }
+    }
+    if (sw > 0) { c[i * 3] = r / sw; c[i * 3 + 1] = g / sw; c[i * 3 + 2] = b / sw; bgD[i] = z / sw; } else bgD[i] = lvl[i];
+    if (plane && plane.frac > 0.15) bgD[i] = Math.min(d[i], Math.max(bgD[i], plane.a * (2 * x / (w - 1) - 1) * aspect + plane.b * (1 - 2 * y / (h - 1)) + plane.c - 0.006));
+    mask[i] = 1;
+  }
+  for (let i = 0; i < n; i++) { bg[i * 4] = c[i * 3]; bg[i * 4 + 1] = c[i * 3 + 1]; bg[i * 4 + 2] = c[i * 3 + 2]; bg[i * 4 + 3] = mask[i] ? 255 : 0; }
+  return { bgD, bg, mask, filled: qt };
+}
+// Vertex data (disparity + four neighbours for normals) and triangles for one layer.
+// cut = true leaves out the triangles that span a depth jump; mask keeps only triangles touching it.
+function meshData(d, gw, gh, cut, mask) {
+  const n = gw * gh, attr = new Float32Array(n * 5);
+  for (let y = 0, i = 0, o = 0; y < gh; y++) for (let x = 0; x < gw; x++, i++) {
+    const v = d[i];
+    let l = x > 0 ? d[i - 1] : v, r = x < gw - 1 ? d[i + 1] : v, u = y > 0 ? d[i - gw] : v, dn = y < gh - 1 ? d[i + gw] : v;
+    // a neighbour across a jump belongs to another surface: mirror the one on this side instead
+    const lj = Math.abs(l - v) > TAU, rj = Math.abs(r - v) > TAU, uj = Math.abs(u - v) > TAU, dj = Math.abs(dn - v) > TAU;
+    if (lj && rj) l = r = v; else if (lj) l = 2 * v - r; else if (rj) r = 2 * v - l;
+    if (uj && dj) u = dn = v; else if (uj) u = 2 * v - dn; else if (dj) dn = 2 * v - u;
+    attr[o++] = v; attr[o++] = l; attr[o++] = r; attr[o++] = u; attr[o++] = dn;
+  }
+  const idx = new Uint32Array((gw - 1) * (gh - 1) * 6);
+  let k = 0;
+  const tri = (a, b, c) => {
+    if (cut && Math.max(d[a], d[b], d[c]) - Math.min(d[a], d[b], d[c]) > TAU) return;
+    if (mask && !(mask[a] || mask[b] || mask[c])) return;
+    idx[k++] = a; idx[k++] = b; idx[k++] = c;
+  };
+  for (let y = 0; y < gh - 1; y++) for (let x = 0; x < gw - 1; x++) {
+    const p = y * gw + x, q = p + 1, r = p + gw, s = r + 1;
+    // split along the diagonal with the smaller depth difference, so silhouettes stay clean
+    if (Math.abs(d[p] - d[s]) <= Math.abs(d[q] - d[r])) { tri(p, r, s); tri(p, s, q); } else { tri(p, r, q); tri(q, r, s); }
+  }
+  return { attr, idx, count: k };
+}
+// The ground shows up as a plane in disparity: d = a*x + b*y + c over picture coordinates
+// (x right, y up, half height 1). Find the plane most samples agree with (RANSAC, then least squares).
+function fitGround(d, gw, gh, aspect) {
+  const xs = [], ys = [], ds = [];
+  for (let y = Math.floor(gh * 0.15); y < gh; y += 5) for (let x = 2; x < gw; x += 5) { xs.push((2 * x / (gw - 1) - 1) * aspect); ys.push(1 - 2 * y / (gh - 1)); ds.push(d[y * gw + x]); }
+  const n = xs.length; let seed = 20261125;
+  const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+  let best = null, bestScore = -1;
+  for (let it = 0; it < 600; it++) {
+    const i = (rnd() * n) | 0, j = (rnd() * n) | 0, k = (rnd() * n) | 0;
+    const x1 = xs[j] - xs[i], y1 = ys[j] - ys[i], z1 = ds[j] - ds[i], x2 = xs[k] - xs[i], y2 = ys[k] - ys[i], z2 = ds[k] - ds[i];
+    const det = x1 * y2 - x2 * y1; if (Math.abs(det) < 0.05) continue;
+    const a = (z1 * y2 - z2 * y1) / det, b = (x1 * z2 - x2 * z1) / det, c = ds[i] - a * xs[i] - b * ys[i];
+    if (b > -0.05 || Math.abs(a) > 0.45 * Math.abs(b)) continue;      // ground comes nearer towards the bottom of the picture
+    let score = 0; for (let q = 0; q < n; q++) if (Math.abs(ds[q] - (a * xs[q] + b * ys[q] + c)) < 0.03) score++;
+    if (score > bestScore) { bestScore = score; best = [a, b, c]; }
+  }
+  if (!best || bestScore < n * 0.1) { const s = Float32Array.from(ds).sort(); return { a: 0, b: -0.26, c: s[s.length >> 1], frac: 0 }; }
+  let [a, b, c] = best;
+  for (let pass = 0; pass < 3; pass++) {
+    let sxx = 0, sxy = 0, sx = 0, syy = 0, sy = 0, s1 = 0, sxd = 0, syd = 0, sd = 0;
+    for (let q = 0; q < n; q++) {
+      if (Math.abs(ds[q] - (a * xs[q] + b * ys[q] + c)) > 0.025) continue;
+      const x = xs[q], y = ys[q], z = ds[q];
+      sxx += x * x; sxy += x * y; sx += x; syy += y * y; sy += y; s1++; sxd += x * z; syd += y * z; sd += z;
+    }
+    const det = sxx * (syy * s1 - sy * sy) - sxy * (sxy * s1 - sy * sx) + sx * (sxy * sy - syy * sx);
+    if (Math.abs(det) < 1e-9) break;
+    const na = (sxd * (syy * s1 - sy * sy) - sxy * (syd * s1 - sy * sd) + sx * (syd * sy - syy * sd)) / det;
+    const nb = (sxx * (syd * s1 - sd * sy) - sxd * (sxy * s1 - sy * sx) + sx * (sxy * sd - syd * sx)) / det;
+    const nc = (sxx * (syy * sd - sy * syd) - sxy * (sxy * sd - syd * sx) + sxd * (sxy * sy - syy * sx)) / det;
+    if (nb > -0.05) break;
+    a = na; b = nb; c = nc;
+  }
+  return { a, b, c, frac: bestScore / n };
+}
+// Where one view sits on the turntable. tanPhi is the tangent of the camera's height angle above the
+// ground; it fixes the depth scale k of the view. Returns k, the pivot disparity d0 and the 4x4 matrix
+// (column-major) taking the view's camera space to turntable space, where the ground is y = 0 and the
+// view's camera stands deg degrees round from the original one. reg = [scale, turn, shift x, shift z]
+// then lines the view up with the original on the ground.
+function placeView(plane, deg, tanPhi, cam, reg) {
+  // Only the slope towards the camera is used: a sideways slope would roll the picture, and these maps are drawn level.
+  const g = Math.abs(plane.b), k = Math.min(2.2, 1 / (cam * g * tanPhi));
+  let nx = 0, ny = -plane.b * k * cam, nz = 1, l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+  let zx = -nz * nx, zy = -nz * ny, zz = 1 - nz * nz; l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  const xx = ny * zz - nz * zy, xy = nz * zx - nx * zz, xz = nx * zy - ny * zx;
+  const sc = reg ? reg[0] : 1, ang = (deg + (reg ? reg[1] : 0)) * Math.PI / 180, c = Math.cos(ang) * sc, s = Math.sin(ang) * sc;
+  const B = [[xx, xy, xz], [nx, ny, nz], [zx, zy, zz]], R = [[c, 0, s], [0, sc, 0], [-s, 0, c]], m = new Float32Array(16);
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) m[col * 4 + row] = R[row][0] * B[0][col] + R[row][1] * B[1][col] + R[row][2] * B[2][col];
+  if (reg) { m[12] = reg[2]; m[14] = reg[3]; }
+  m[15] = 1;
+  return { k, d0: plane.c, m };
+}
+/*SHARED-END*/
+
+let prog, U = {}, progBase, UB = {}, baseVao, baseWall = 0, baseFloor = 0;
+const uvBufs = new Map();   // grid size -> buffer of picture coordinates
+function uvBuffer(gw, gh) {
+  const key = gw + 'x' + gh; if (uvBufs.has(key)) return uvBufs.get(key);
+  const uv = new Float32Array(gw * gh * 2), buf = gl.createBuffer();
+  for (let y = 0, i = 0; y < gh; y++) for (let x = 0; x < gw; x++) { uv[i++] = x / (gw - 1); uv[i++] = y / (gh - 1); }
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
+  uvBufs.set(key, buf); return buf;
+}
+function makeTex(mip) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, mip ? gl.LINEAR_MIPMAP_LINEAR : gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return t;
+}
+function initGL() {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  for (const n of ['uVP', 'uModel', 'uK', 'uD0', 'uAspect', 'uCam', 'uGain', 'uPlane', 'uStep', 'uTex', 'uBg', 'uMode', 'uLayer', 'uLit', 'uClip', 'uAlpha', 'uLight', 'uEye', 'uBgCol', 'uGrid'])
+    U[n] = gl.getUniformLocation(prog, n);
+  progBase = gl.createProgram();
+  gl.attachShader(progBase, sh(gl.VERTEX_SHADER, VS_BASE)); gl.attachShader(progBase, sh(gl.FRAGMENT_SHADER, FS_BASE));
+  gl.linkProgram(progBase);
+  if (!gl.getProgramParameter(progBase, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(progBase));
+  for (const n of ['uVP', 'uClip', 'uLight', 'uTex', 'uToCam', 'uCam', 'uAspect']) UB[n] = gl.getUniformLocation(progBase, n);
+  { // unit rounded slab (x^4 + z^4 = 1): a wall strip from the ground down, then a floor fan just under the ground
+    const N = 120, p = [];
+    const rim = i => { const t = i / N * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t); return [Math.sign(c) * Math.sqrt(Math.abs(c)), Math.sign(sn) * Math.sqrt(Math.abs(sn))]; };
+    for (let i = 0; i <= N; i++) { const [x, z] = rim(i); p.push(x, 0.0, z, x, -0.17, z); }
+    baseWall = (N + 1) * 2;
+    p.push(0, -0.1, 0); for (let i = 0; i <= N; i++) { const [x, z] = rim(i); p.push(x * 0.999, -0.1, z * 0.999); }
+    baseFloor = N + 2;
+    baseVao = gl.createVertexArray(); gl.bindVertexArray(baseVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(p), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0); gl.bindVertexArray(null);
+  }
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.clearColor(0.024, 0.039, 0.078, 1);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+}
+
+// One view's GPU side: a front layer cut at depth jumps, the back layer behind the cuts, two textures.
+function uploadView(v) {
+  const { gw, gh, d } = v, n = gw * gh, bufUV = uvBuffer(gw, gh);
+  const c = document.createElement('canvas'); c.width = gw; c.height = gh;
+  const cx = c.getContext('2d', { willReadFrequently: true }); cx.imageSmoothingQuality = 'high'; cx.drawImage(v.img, 0, 0, gw, gh);
+  v.plane = fitGround(d, gw, gh, v.w / v.h);
+  const lay = buildLayers(d, cx.getImageData(0, 0, gw, gh).data, gw, gh, v.plane, v.w / v.h);
+  v.layers = [d, lay.bgD].map((dd, li) => {
+    const md = meshData(dd, gw, gh, li === 0, li ? lay.mask : null), L = { count: md.count };
+    L.vao = gl.createVertexArray(); gl.bindVertexArray(L.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, bufUV); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    L.buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, L.buf); gl.bufferData(gl.ARRAY_BUFFER, md.attr, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 1, gl.FLOAT, false, 20, 0);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, 20, 4);
+    L.idx = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, L.idx); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, md.idx.subarray(0, md.count), gl.STATIC_DRAW);
+    return L;
+  });
+  gl.bindVertexArray(null);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  v.tex = makeTex(true);
+  const an = gl.getExtension('EXT_texture_filter_anisotropic');
+  if (an) gl.texParameterf(gl.TEXTURE_2D, an.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(an.MAX_TEXTURE_MAX_ANISOTROPY_EXT)));
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, v.img); gl.generateMipmap(gl.TEXTURE_2D);
+  v.texBg = makeTex(false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gw, gh, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(lay.bg.buffer));
+  v.verts = n * 2; v.tris = (v.layers[0].count + v.layers[1].count) / 3; v.lay = lay;
+}
+function freeView(v) {
+  if (!v.layers) return;
+  for (const L of v.layers) { gl.deleteVertexArray(L.vao); gl.deleteBuffer(L.buf); gl.deleteBuffer(L.idx); }
+  gl.deleteTexture(v.tex); gl.deleteTexture(v.texBg); v.layers = null;
+}
+
+// ---------- matrices ----------
+function perspective(fovy, aspect, near, far) {
+  const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+  return [f / aspect, 0, 0, 0, 0, f, 0, 0, 0, 0, (far + near) * nf, -1, 0, 0, 2 * far * near * nf, 0];
+}
+function lookAt(e, c, up) {
+  let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2], l = Math.hypot(zx, zy, zz); zx /= l; zy /= l; zz /= l;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx; l = Math.hypot(xx, xy, xz); xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return [xx, yx, zx, 0, xy, yy, zy, 0, xz, yz, zz, 0,
+    -(xx * e[0] + xy * e[1] + xz * e[2]), -(yx * e[0] + yy * e[1] + yz * e[2]), -(zx * e[0] + zy * e[1] + zz * e[2]), 1];
+}
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++)
+    o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3];
+  return o;
+}
+
+// ---------- frame ----------
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2), w = Math.max(2, Math.round(canvas.clientWidth * dpr)), h = Math.max(2, Math.round(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; st.dirty = true; }
+}
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const m = st.map;
+  if (!m || document.hidden || st.paused) return;
+  const ease = 1 - Math.exp(-dt * 9), round = m.views.length > 1;
+  const wantAuto = st.auto && !drag.active && now > st.idleAt && m.complete ? 1 : 0;
+  st.autoMix += (wantAuto - st.autoMix) * (1 - Math.exp(-dt * 2.2));
+  if (round) {                                                         // the turntable turns by itself,
+    const th = ((st.tYaw / RAD) % 360 + 360) % 360; let near = 360;     // slowly past the drawn views, quicker in between
+    for (const v of m.views) near = Math.min(near, Math.abs(((th - v.deg + 540) % 360) - 180));
+    st.tYaw += st.autoMix * dt * (5 + 22 * smooth(0, 1, near / (180 / m.views.length))) * RAD;
+  }
+  const moving = Math.abs(st.tYaw - st.yaw) + Math.abs(st.tPitch - st.pitch) + Math.abs(st.tZoom - st.zoom) > 1e-4;
+  st.yaw += (st.tYaw - st.yaw) * ease; st.pitch += (st.tPitch - st.pitch) * ease; st.zoom += (st.tZoom - st.zoom) * ease;
+  if (!(st.dirty || moving || st.autoMix > 0.002)) return;
+  st.dirty = false;
+  resize();
+  const t = (now - st.t0) / 1000, sway = round ? 0 : st.autoMix;
+  draw(st.yaw + sway * 0.2 * Math.sin(t * 0.42), st.pitch + sway * 0.05 * Math.sin(t * 0.31 + 1.3), st.zoom);
+}
+// yaw: camera orbit around the turntable (radians, 0 = the original picture); pitch: offset from the views' own height angle
+function draw(yaw, pitch, zoom) {
+  const m = st.map, v0 = m.views[0], round = m.views.length > 1;
+  // the two views whose cameras are nearest to ours, and how far we are between them
+  let a = v0, b = null, wb = 0, t = 0;
+  if (round) {
+    const th = ((yaw / RAD) % 360 + 360) % 360, vs = m.views;
+    let i = vs.length - 1; for (let j = 0; j < vs.length; j++) if (vs[j].deg <= th) i = j;
+    a = vs[i]; b = vs[(i + 1) % vs.length];
+    t = (((th - a.deg) + 360) % 360) / (((b.deg - a.deg) + 360) % 360 || 360);
+    wb = smooth(0.45, 0.55, t);
+  }
+  // each view was drawn from its own height angle; ours glides from one to the next (the strength slider trades angle against depth)
+  const tanOf = v => clamp(v.reg[4] / st.strength, 0.36, 8), phiA = Math.atan(tanOf(a)), phiB = b ? Math.atan(tanOf(b)) : phiA;
+  const phi = clamp(phiA + (phiB - phiA) * smooth(0, 1, t) + pitch, 0.1, 1.52);
+  const ca = canvas.width / canvas.height;
+  let fit = Math.max(1, m.aspect / ca), slabX = 1e6, slabZ = 1e6;
+  if (round) {
+    // the slab the map stands on: as wide as the original picture, as deep as the ground it shows
+    const q = 1 / (CAM * tanOf(v0)), near = 1 / (1 + q);
+    slabX = m.aspect * 0.97; slabZ = Math.hypot(near, CAM * (1 - near)) * 1.12;
+    const c = Math.abs(Math.cos(yaw)), sn = Math.abs(Math.sin(yaw));
+    fit = Math.max(fit, (c * slabX + sn * slabZ) / ca * 0.96, (sn * slabX + c * slabZ) * Math.sin(phi) * 0.9 + 0.12 * Math.cos(phi));
+  }
+  const dist = CAM * fit * zoom;
+  const eye = [Math.sin(yaw) * Math.cos(phi) * dist, Math.sin(phi) * dist, Math.cos(yaw) * Math.cos(phi) * dist];
+  const view = lookAt(eye, [0, 0, 0], [0, 1, 0]), vp = mul(perspective(FOVY, ca, 0.05, 80), view);
+  // key light fixed to the camera: up and to the left
+  const L = [-0.45 * view[0] + 0.62 * view[1] + 0.64 * view[2], -0.45 * view[4] + 0.62 * view[5] + 0.64 * view[6], -0.45 * view[8] + 0.62 * view[9] + 0.64 * view[10]];
+  const ll = Math.hypot(...L);
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const plinth = () => {
+    if (!round) return;
+    gl.useProgram(progBase); gl.bindVertexArray(baseVao); gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.uniformMatrix4fv(UB.uVP, false, vp); gl.uniform2f(UB.uClip, slabX, slabZ); gl.uniform3f(UB.uLight, L[0] / ll, L[1] / ll, L[2] / ll);
+    const m0 = placeView(v0.plane, 0, tanOf(v0), CAM, v0.reg).m;      // a rotation, so its transpose takes us back
+    gl.uniformMatrix3fv(UB.uToCam, false, [m0[0], m0[4], m0[8], m0[1], m0[5], m0[9], m0[2], m0[6], m0[10]]);
+    gl.uniform1f(UB.uCam, CAM); gl.uniform1f(UB.uAspect, v0.w / v0.h);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, v0.tex); gl.uniform1i(UB.uTex, 0);
+    gl.depthMask(false); gl.drawArrays(gl.TRIANGLE_FAN, baseWall, baseFloor); gl.depthMask(true);   // the floor only fills gaps, it never hides the map
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, baseWall);
+    gl.useProgram(prog);
+  };
+  plinth();
+  gl.useProgram(prog);
+  gl.uniformMatrix4fv(U.uVP, false, vp); gl.uniform1f(U.uCam, CAM);
+  gl.uniform1i(U.uMode, st.mode); gl.uniform1f(U.uLit, st.lit);
+  gl.uniform3f(U.uLight, L[0] / ll, L[1] / ll, L[2] / ll); gl.uniform3f(U.uEye, eye[0], eye[1], eye[2]);
+  gl.uniform3f(U.uBgCol, 0.024, 0.039, 0.078);
+  gl.uniform2f(U.uClip, slabX, slabZ);
+  gl.uniform1i(U.uTex, 0); gl.uniform1i(U.uBg, 1);
+
+  const pass = (v, alpha) => {
+    const pl = placeView(v.plane, v.deg, tanOf(v), CAM, v.reg);
+    gl.uniformMatrix4fv(U.uModel, false, pl.m);
+    gl.uniform1f(U.uK, pl.k); gl.uniform1f(U.uD0, pl.d0); gl.uniform1f(U.uAspect, v.w / v.h); gl.uniform1f(U.uAlpha, alpha);
+    gl.uniform2f(U.uStep, 1 / (v.gw - 1), 1 / (v.gh - 1));
+    gl.uniform3f(U.uPlane, v.plane.a, v.plane.b, v.plane.c); gl.uniform1f(U.uGain, v.reg[5] == null ? 1 : v.reg[5]);
+    // wireframe shows every 2nd, 4th or 8th mesh line, whichever keeps lines about 8 px apart
+    const pxPerCell = canvas.height / (v.gh - 1) / (zoom * fit) * v.reg[0]; let every = 2; while (every < 16 && pxPerCell * every < 8) every *= 2;
+    gl.uniform2f(U.uGrid, (v.gw - 1) / every, (v.gh - 1) / every);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, v.texBg);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, v.tex);
+    for (let li = 1; li >= 0; li--) {          // back layer first, nudged away so the front wins where they coincide
+      const Ly = v.layers[li]; if (!Ly.count) continue;
+      if (li) { gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(1.5, 3); } else gl.disable(gl.POLYGON_OFFSET_FILL);
+      gl.bindVertexArray(Ly.vao); gl.uniform1i(U.uLayer, li);
+      gl.drawElements(gl.TRIANGLES, Ly.count, gl.UNSIGNED_INT, 0);
+    }
+  };
+  if (wb < 1) pass(a, 1);
+  if (wb >= 1) pass(b, 1);
+  else if (wb > 0) {                            // dissolve the next view in over the current one
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.colorMask(false, false, false, false); plinth(); pass(b, 1); gl.colorMask(true, true, true, true);
+    gl.enable(gl.BLEND); pass(b, wb); gl.disable(gl.BLEND);
+  }
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+}
+
+// ---------- loading ----------
+const cache = new Map();
+function loadImage(url) {
+  return new Promise((res, rej) => { const im = new Image(); im.decoding = 'async'; im.onload = () => res(im); im.onerror = () => rej(new Error('无法载入 ' + url)); im.src = url; });
+}
+async function loadDepth(url) {
+  // depth packed as R = high byte, G = low byte, stored losslessly
+  let src;
+  try { const blob = await (await fetch(url)).blob(); src = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }); }
+  catch (e) { src = await loadImage(url); }
+  const w = src.width, h = src.height, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const cx = c.getContext('2d', { willReadFrequently: true }); cx.drawImage(src, 0, 0);
+  const px = cx.getImageData(0, 0, w, h).data, d = new Float32Array(w * h);
+  for (let i = 0; i < d.length; i++) d[i] = (px[i * 4] * 256 + px[i * 4 + 1]) / 65535;
+  if (src.close) src.close();
+  return { d, gw: w, gh: h };
+}
+function loadView(id, deg) {
+  const name = deg ? `${id}_${pad(deg)}` : id;
+  return Promise.all([loadImage(`tex/${name}.webp`), loadDepth(`depth/${name}.webp`)])
+    .then(([img, dep]) => ({ deg, reg: VIEWS[id] ? VIEWS[id][deg] : null, img, w: img.naturalWidth, h: img.naturalHeight, ...dep }));
+}
+// Decoded pictures and depth for one map; the original view first, the generated ones follow.
+function loadMap(i) {
+  if (cache.has(i)) { const p = cache.get(i); cache.delete(i); cache.set(i, p); return p; }
+  const id = pad(i + 1), degs = degsOf(id);
+  const rec = { i, id, degs, first: loadView(id, 0), rest: degs.slice(1).map(g => loadView(id, g)) };
+  rec.first.catch(() => cache.delete(i)); rec.rest.forEach(p => p.catch(() => {}));
+  cache.set(i, rec);
+  if (cache.size > 3) cache.delete(cache.keys().next().value);
+  return rec;
+}
+function setSnaps(m) {
+  const box = $('snaps'); box.textContent = '';
+  if (m.views.length < 2) return;
+  const lab = document.createElement('span'); lab.textContent = '转到'; box.appendChild(lab);
+  for (const v of m.views) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sm'; b.textContent = VIEW_NAME[v.deg] || v.deg + '°';
+    b.addEventListener('click', () => {
+      const turn = 2 * Math.PI, want = v.deg * RAD; st.tYaw += ((want - st.tYaw) % turn + turn * 1.5) % turn - Math.PI;   // shortest way round
+      st.tPitch = 0; st.idleAt = performance.now() + 6000;
+    });
+    box.appendChild(b);
+  }
+}
+function showStats(m) {
+  let vt = 0, tr = 0; for (const v of m.views) { vt += v.verts; tr += v.tris; }
+  $('hudStat').textContent = `${m.views.length} 个视角 · ${vt.toLocaleString('en-US')} 顶点 · ${Math.round(tr).toLocaleString('en-US')} 三角面`;
+}
+function markCurrent() {
+  for (const t of grid.children) t.setAttribute('aria-current', +t.dataset.i === st.cur ? 'true' : 'false');
+  $('hudNum').textContent = pad(st.cur + 1);
+}
+async function select(i, fromUser) {
+  i = ((i % N) + N) % N; st.cur = i; markCurrent();
+  const name = 'map-' + pad(i + 1);
+  if (fromUser && location.hash !== '#' + name) { try { location.hash = name; } catch (e) {} }
+  const busy = $('busy'); busy.hidden = false; busy.textContent = '载入中';
+  const rec = loadMap(i);
+  try {
+    const v0 = await rec.first;
+    if (st.cur !== i) return;                 // a newer pick won the race
+    if (!gl) { flat.src = v0.img.src; busy.hidden = true; return; }
+    const old = st.map, m = { i, id: rec.id, views: [], complete: rec.rest.length === 0, aspect: v0.w / v0.h };
+    const add = v => { const u = { ...v }; uploadView(u); m.views.push(u); m.views.sort((p, q) => p.deg - q.deg); return u; };
+    const u0 = add(v0);
+    // a lone view has no side views to calibrate against: read its camera height angle off the ground slope at a moderate depth scale
+    if (!u0.reg) u0.reg = [1, 0, 0, 0, clamp(1 / (CAM * 0.55 * Math.hypot(u0.plane.a, u0.plane.b)), Math.tan(40 * RAD), Math.tan(78 * RAD))];
+    st.map = m; if (old) old.views.forEach(freeView);
+    st.yaw = st.tYaw = 0; st.pitch = st.tPitch = 0; st.zoom = st.tZoom = 1; st.autoMix = 0; st.idleAt = performance.now() + 900; st.dirty = true;
+    setSnaps(m); showStats(m);
+    if (rec.rest.length) busy.textContent = `正面已就绪，载入其余 ${rec.rest.length} 个视角`; else busy.hidden = true;
+    let left = rec.rest.length;
+    rec.rest.forEach(p => p.then(v => {
+      if (st.map !== m) return;
+      add(v); st.dirty = true; setSnaps(m); showStats(m);
+    }).catch(() => {}).finally(() => {
+      if (st.map !== m) return;
+      if (--left === 0) { m.complete = true; busy.hidden = true; }
+    }));
+    if (i + 1 < N) loadMap(i + 1);               // warm the next one
+  } catch (e) {
+    if (st.cur === i) { busy.hidden = false; busy.textContent = '这张图没载入成功，换一张试试'; }
+  }
+}
+
+// ---------- controls ----------
+const drag = { active: false, pts: new Map(), pinch: 0 };
+function nudgeIdle() { st.idleAt = performance.now() + 2600; }
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId); drag.pts.set(e.pointerId, [e.clientX, e.clientY]);
+  drag.active = true; drag.pinch = 0; canvas.classList.add('dragging');
+});
+canvas.addEventListener('pointermove', e => {
+  const p = drag.pts.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p[0], dy = e.clientY - p[1]; p[0] = e.clientX; p[1] = e.clientY;
+  if (drag.pts.size === 1) {
+    const s = 2.6 / canvas.clientHeight, round = st.map && st.map.views.length > 1;
+    st.tYaw -= dx * s; if (!round) st.tYaw = clamp(st.tYaw, -0.8, 0.8);
+    st.tPitch = clamp(st.tPitch + dy * s, -0.6, 0.6);
+  } else if (drag.pts.size === 2) {
+    const [a, b] = [...drag.pts.values()], dd = Math.hypot(a[0] - b[0], a[1] - b[1]);
+    if (drag.pinch) st.tZoom = clamp(st.tZoom * drag.pinch / dd, 0.35, 2.4);
+    drag.pinch = dd;
+  }
+});
+const endDrag = e => { drag.pts.delete(e.pointerId); drag.pinch = 0; if (!drag.pts.size) { drag.active = false; canvas.classList.remove('dragging'); nudgeIdle(); } };
+canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+canvas.addEventListener('wheel', e => {
+  if (!(e.ctrlKey || e.metaKey || document.fullscreenElement)) return;   // plain wheel keeps scrolling the page
+  e.preventDefault(); st.tZoom = clamp(st.tZoom * Math.exp(e.deltaY * 0.0022), 0.35, 2.4); nudgeIdle();
+}, { passive: false });
+function resetView() { st.tYaw = Math.round(st.tYaw / (2 * Math.PI)) * 2 * Math.PI; st.tPitch = 0; st.tZoom = 1; st.idleAt = performance.now() + 4000; }
+canvas.addEventListener('dblclick', resetView);
+$('reset').addEventListener('click', resetView);
+$('prev').addEventListener('click', () => select(st.cur - 1, true));
+$('next').addEventListener('click', () => select(st.cur + 1, true));
+addEventListener('keydown', e => {
+  if (e.target instanceof HTMLInputElement || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.key === 'ArrowLeft') { select(st.cur - 1, true); e.preventDefault(); }
+  if (e.key === 'ArrowRight') { select(st.cur + 1, true); e.preventDefault(); }
+});
+$('modes').addEventListener('change', e => { st.mode = +e.target.value; $('legend').hidden = st.mode < 2; st.dirty = true; });
+$('depthK').addEventListener('input', e => { st.strength = e.target.value / 100; $('depthKOut').textContent = e.target.value + '%'; st.dirty = true; });
+$('auto').addEventListener('change', e => { st.auto = e.target.checked; st.idleAt = 0; });
+$('lit').addEventListener('change', e => { st.lit = e.target.checked ? 1 : 0; st.dirty = true; });
+$('fs').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (stage.requestFullscreen) stage.requestFullscreen().catch(() => {});
+});
+document.addEventListener('fullscreenchange', () => { $('fs').textContent = document.fullscreenElement ? '退出全屏' : '全屏'; st.dirty = true; });
+new ResizeObserver(() => { st.dirty = true; }).observe(stage);
+document.addEventListener('visibilitychange', () => { st.dirty = true; });
+
+/*LOCAL-BEGIN*/
+// ---------- GLB export: every view of the current map as textured meshes in turntable space ----------
+function buildGLB(m) {
+    const parts = [], views = [], accs = [], g = { asset: { version: '2.0', generator: 'map-wallpaper-3d' }, scene: 0, scenes: [{ nodes: [] }], nodes: [], meshes: [], materials: [], textures: [], images: [], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 }], extensionsUsed: ['KHR_materials_unlit'] };
+    let off = 0;
+    const view = (u8, target) => { const padN = (4 - u8.length % 4) % 4; views.push({ buffer: 0, byteOffset: off, byteLength: u8.length, ...(target ? { target } : {}) }); parts.push(u8); if (padN) parts.push(new Uint8Array(padN)); off += u8.length + padN; return views.length - 1; };
+    const blobBytes = (cv, type, q) => { const bin = atob(cv.toDataURL(type, q).split(',')[1]), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8; };
+    const texture = (cv, type, q, name) => { g.images.push({ bufferView: view(blobBytes(cv, type, q)), mimeType: type, name }); g.textures.push({ source: g.images.length - 1, sampler: 0 }); g.materials.push({ name, doubleSided: true, pbrMetallicRoughness: { baseColorTexture: { index: g.textures.length - 1 }, metallicFactor: 0, roughnessFactor: 1 }, extensions: { KHR_materials_unlit: {} } }); return g.materials.length - 1; };
+    const STEP = 2;     // every 2nd sample: about a quarter of the on-screen triangles
+    for (const v of m.views) {
+      const pl = placeView(v.plane, v.deg, clamp(v.reg[4] / st.strength, 0.36, 8), CAM, v.reg), M = pl.m, gain = v.reg[5] == null ? 1 : v.reg[5], tag = 'view_' + pad(v.deg);
+      const gw = Math.floor((v.gw - 1) / STEP) + 1, gh = Math.floor((v.gh - 1) / STEP) + 1;
+      const sub = (src, T) => { const o = new T(gw * gh); for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) o[y * gw + x] = src[y * STEP * v.gw + x * STEP]; return o; };
+      // pictures: the view itself, and for the back layer the view with the painted-in background laid over it
+      const c1 = document.createElement('canvas'); c1.width = v.img.naturalWidth; c1.height = v.img.naturalHeight; c1.getContext('2d').drawImage(v.img, 0, 0);
+      const c2 = document.createElement('canvas'), c3 = document.createElement('canvas'); c2.width = c3.width = v.gw; c2.height = c3.height = v.gh;
+      c3.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(v.lay.bg), v.gw, v.gh), 0, 0);
+      const x2 = c2.getContext('2d'); x2.drawImage(v.img, 0, 0, v.gw, v.gh); x2.drawImage(c3, 0, 0);
+      const mats = [texture(c1, 'image/jpeg', 0.9, tag), texture(c2, 'image/png', undefined, tag + '_behind')];
+      [[sub(v.d, Float32Array), true, null, 'front'], [sub(v.lay.bgD, Float32Array), false, sub(v.lay.mask, Uint8Array), 'behind']].forEach(([d, cut, mask, name], li) => {
+        const md = meshData(d, gw, gh, cut, mask); if (!md.count) return;
+        const remap = new Int32Array(gw * gh).fill(-1), pos = [], uv = [], idx = new Uint32Array(md.count), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
+        for (let k = 0; k < md.count; k++) {
+          const i = md.idx[k];
+          if (remap[i] < 0) {
+            const x = i % gw, y = (i - x) / gw, u = x / (gw - 1), w = y / (gh - 1), p = unproject(u, w, d[i], pl.k, pl.d0, v.w / v.h, CAM, v.plane, gain);
+            const q = [M[0] * p[0] + M[4] * p[1] + M[8] * p[2] + M[12], M[1] * p[0] + M[5] * p[1] + M[9] * p[2], M[2] * p[0] + M[6] * p[1] + M[10] * p[2] + M[14]];
+            for (let c = 0; c < 3; c++) { lo[c] = Math.min(lo[c], q[c]); hi[c] = Math.max(hi[c], q[c]); }
+            remap[i] = pos.length / 3; pos.push(q[0], q[1], q[2]); uv.push(u, w);
+          }
+          idx[k] = remap[i];
+        }
+        const P = new Float32Array(pos), T = new Float32Array(uv), n = P.length / 3;
+        accs.push({ bufferView: view(new Uint8Array(P.buffer), 34962), componentType: 5126, count: n, type: 'VEC3', min: lo, max: hi },
+          { bufferView: view(new Uint8Array(T.buffer), 34962), componentType: 5126, count: n, type: 'VEC2' },
+          { bufferView: view(new Uint8Array(idx.buffer), 34963), componentType: 5125, count: idx.length, type: 'SCALAR' });
+        g.meshes.push({ name: tag + '_' + name, primitives: [{ attributes: { POSITION: accs.length - 3, TEXCOORD_0: accs.length - 2 }, indices: accs.length - 1, material: mats[li] }] });
+        g.nodes.push({ name: tag + '_' + name, mesh: g.meshes.length - 1 }); g.scenes[0].nodes.push(g.nodes.length - 1);
+      });
+    }
+    g.bufferViews = views; g.accessors = accs; g.buffers = [{ byteLength: off }];
+    let json = new TextEncoder().encode(JSON.stringify(g)); if (json.length % 4) { const j = new Uint8Array(json.length + 4 - json.length % 4).fill(32); j.set(json); json = j; }
+    const head = new DataView(new ArrayBuffer(20)); head.setUint32(0, 0x46546C67, true); head.setUint32(4, 2, true); head.setUint32(8, 28 + json.length + off, true); head.setUint32(12, json.length, true); head.setUint32(16, 0x4E4F534A, true);
+    const bh = new DataView(new ArrayBuffer(8)); bh.setUint32(0, off, true); bh.setUint32(4, 0x004E4942, true);
+    const all = [new Uint8Array(head.buffer), json, new Uint8Array(bh.buffer), ...parts], out = new Uint8Array(28 + json.length + off);
+    let at = 0; for (const p of all) { out.set(p, at); at += p.length; }
+    return out;
+}
+async function exportGLB() {
+  const m = st.map; if (!m) return;
+  const btn = $('glb'), label = btn.textContent; btn.disabled = true; btn.textContent = '正在导出…';
+  try {
+    await new Promise(r => setTimeout(r, 30));          // let the button repaint first
+    const url = URL.createObjectURL(new Blob([buildGLB(m)], { type: 'model/gltf-binary' })), a = document.createElement('a');
+    a.href = url; a.download = 'map-' + m.id + '.glb'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
+    btn.textContent = '已导出 map-' + m.id + '.glb';
+  } catch (e) { btn.textContent = '导出失败：' + e.message; }
+  setTimeout(() => { btn.textContent = label; btn.disabled = false; }, 2600);
+}
+// test hook: ?glb=1 replaces the page with the current map's GLB as base64 text, for headless checks
+if (new URLSearchParams(location.search).get('glb') && gl) {
+  const wait = setInterval(() => {
+    const m = st.map; if (!m || !m.complete) return;
+    clearInterval(wait); st.paused = true;
+    const u8 = buildGLB(m); let bin = '';
+    for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+    document.body.textContent = 'GLB64:' + btoa(bin) + ':END'; document.title = 'glb-ready';
+  }, 100);
+}
+if ($('glb')) { if (gl) $('glb').addEventListener('click', exportGLB); else $('glb').hidden = true; }
+/*LOCAL-END*/
+
+function fromHash() { const m = /^#map-(\d{3})$/.exec(location.hash); return m ? clamp(+m[1], 1, N) - 1 : -1; }
+addEventListener('hashchange', () => { const i = fromHash(); if (i >= 0 && i !== st.cur) select(i, false); });
+
+// ---------- boot ----------
+let flat = null;
+// sync the controls with whatever the browser restored into the form
+st.mode = +(document.querySelector('input[name=mode]:checked') || {}).value || 0; $('legend').hidden = st.mode < 2;
+st.strength = $('depthK').value / 100; $('depthKOut').textContent = $('depthK').value + '%'; st.lit = $('lit').checked ? 1 : 0;
+try { if (!gl) throw new Error('no webgl2'); initGL(); requestAnimationFrame(frame); }
+catch (err) {
+  // no WebGL2: still let people page through the pictures
+  canvas.hidden = true; flat = document.createElement('img'); flat.className = 'flat'; flat.alt = '当前地图'; stage.prepend(flat);
+  $('hudStat').textContent = '这个浏览器不支持 WebGL2，只能显示原图';
+}
+const start = fromHash();
+select(start >= 0 ? start : 0, false);
+// test hook: ?sheet=0,45,90 draws the picked map from those camera angles into one contact sheet
+const sheet = new URLSearchParams(location.search).get('sheet');
+if (sheet && gl) {
+  const wait = setInterval(() => {
+    const m = st.map; if (!m || !m.complete) return;
+    clearInterval(wait); st.paused = true; st.mode = +new URLSearchParams(location.search).get('mode') || 0;
+    const angs = sheet.split(',').map(Number), cols = Math.min(4, angs.length), cw = 480, ch = 280, c = document.createElement('canvas');
+    c.width = cols * cw; c.height = Math.ceil(angs.length / cols) * ch; canvas.width = cw * 2; canvas.height = ch * 2;
+    const cx = c.getContext('2d'); cx.font = '15px Menlo, monospace';
+    angs.forEach((a, k) => {
+      draw(a * RAD, 0, 1); const x = (k % cols) * cw, y = Math.floor(k / cols) * ch;
+      cx.drawImage(canvas, x, y, cw, ch); cx.fillStyle = 'rgba(0,0,0,.6)'; cx.fillRect(x, y, 92, 22); cx.fillStyle = '#fff'; cx.fillText(m.id + ' ' + a + '°', x + 6, y + 16);
+    });
+    document.body.textContent = ''; document.body.style.padding = '0'; c.style.cssText = 'display:block;width:100%'; document.body.appendChild(c); document.title = 'sheet-ready';
+  }, 100);
+}
+window.__map3d = { st, select, draw, resize };   // handle for tests
+})();
+</script>
+</body>
+</html>
